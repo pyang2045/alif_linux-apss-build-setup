@@ -1,3 +1,32 @@
+WHAT THIS FORK ADDS
+===================================================================
+Two things on top of the upstream Alif build setup, both selected by
+environment variables read by scripts/setup.sh:
+
+  SMP=1           (the default here)  Boots Linux on BOTH Cortex-A32
+                  cores. Upstream hangs before userspace because TF-A
+                  never initialises CNTVOFF on the Hyp entry path.
+                  The fix lives in meta-e7-smp/ - see its README.md.
+
+  ROOTFS_ON_SD=1  Puts the root filesystem on an SD card instead of a
+                  cramfs in MRAM. MRAM then holds only TF-A, the DTB
+                  and the XIP kernel, leaving 2,505,888 bytes free for
+                  M55 firmware instead of ~561,000 - a 4.5x increase.
+                  Full guide: docs/config-b2-sd-root.md
+
+Typical invocation:
+
+  sh scripts/fetch-layers.sh
+  ROOTFS_ON_SD=1 source scripts/setup.sh
+  bitbake alif-tiny-image
+
+With ROOTFS_ON_SD=1 you do NOT burn a cramfs image into MRAM. Steps
+below that mention alif-tiny-image-devkit-e7.cramfs-xip apply to the
+stock layout only; use the .ext4 image on an SD card instead.
+
+The upstream build instructions follow, unchanged.
+===================================================================
+
 The following steps fetch the Yocto layers and repositories
 to build Linux images for the APSS (Application Processor SubSystem)
 of the Ensemble E7 and E5 series.
