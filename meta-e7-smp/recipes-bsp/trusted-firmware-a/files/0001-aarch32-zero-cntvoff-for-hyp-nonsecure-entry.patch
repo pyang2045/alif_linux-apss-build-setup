@@ -1,0 +1,40 @@
+From 8f1e5d4f5a5f2a6c7b8d9e0f1a2b3c4d5e6f7081 Mon Sep 17 00:00:00 2001
+From: Alif E7 investigation <noreply@example.invalid>
+Date: Wed, 12 Aug 2026 11:00:00 +0800
+Subject: [PATCH] aarch32: zero CNTVOFF for Hyp non-secure entry
+
+On the E7 Cortex-A32, ID_PFR1.VIRTEXT is present and Linux is entered in
+non-secure Hyp mode. That makes SCR.HCE set in the saved non-secure
+context, selecting the HCE branch below. The existing CNTVOFF
+initialization is only in the alternate EL2-unused branch, leaving the
+warm CPU_ON path's virtual counter offset implementation-defined.
+
+Zero CNTVOFF while the temporary non-secure SCR.NS access window is open,
+covering the HCE branch without changing the existing EL2-unused path.
+
+Upstream-Status: Pending [generic AArch32 TF-A gap; affects any ARM_LINUX_KERNEL_AS_BL33 + SMP platform]
+---
+ lib/el3_runtime/aarch32/context_mgmt.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/lib/el3_runtime/aarch32/context_mgmt.c b/lib/el3_runtime/aarch32/context_mgmt.c
+index a4702fc..a4702fc 100644
+--- a/lib/el3_runtime/aarch32/context_mgmt.c
++++ b/lib/el3_runtime/aarch32/context_mgmt.c
+@@ -198,6 +198,14 @@ void cm_prepare_el3_exit(uint32_t security_state)
+ 			write_hsctlr(hsctlr);
+ 			isb();
+ 
++			/*
++			 * CNTVOFF resets to an implementation-defined value.
++			 * The HCE path otherwise skips the initialization used
++			 * by the EL2-unused path below.
++			 */
++			write64_cntvoff(0);
++			isb();
++
+ 			write_scr(read_scr() & ~SCR_NS_BIT);
+ 			isb();
+ 		} else if ((read_id_pfr1() &
+-- 
+2.39.5

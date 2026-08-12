@@ -71,9 +71,20 @@ for iter in ${LAYERS} ; do
    fi
 done
 
+# meta-e7-smp ships in this repository rather than being fetched into layers/,
+# so it is added separately. It carries the TF-A CNTVOFF fix that SMP needs,
+# plus SRCREV pins for TF-A and the kernel.
+if [ ! -f "${BUILD_DIR}/.meta-e7-smp" ] ; then
+   bitbake-layers add-layer ${TOPDIR}/meta-e7-smp
+   if [ $? -eq 0 ] ; then touch ${BUILD_DIR}/.meta-e7-smp ; fi
+fi
+
 if [ ! -f "conf/auto.conf" ] ; then
    echo "MACHINE=\"devkit-e7\"" > conf/auto.conf
    echo "DISTRO=\"apss-tiny\""  >> conf/auto.conf
+   # Build both A32 cores by default. devkit-e7.conf defaults SMP to "0",
+   # which selects devkit_e7_unicore_defconfig. Set SMP=0 here for unicore.
+   echo "SMP=\"${SMP:-1}\"" >> conf/auto.conf
    if [ "x$SOURCE_MIRROR_URL" = "x" ] ; then
       echo "SOURCE_MIRROR_URL=\"https://downloads.yoctoproject.org/mirror/sources/\"" >> conf/auto.conf
    fi
