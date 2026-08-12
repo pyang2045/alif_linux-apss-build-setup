@@ -85,15 +85,21 @@ if [ ! -f "conf/auto.conf" ] ; then
    # Build both A32 cores by default. devkit-e7.conf defaults SMP to "0",
    # which selects devkit_e7_unicore_defconfig. Set SMP=0 here for unicore.
    echo "SMP=\"${SMP:-1}\"" >> conf/auto.conf
-   # ROOTFS_ON_SD=1 moves the root filesystem to an SD card, leaving MRAM to hold
-   # only TF-A, the DTB and the XIP kernel. That frees 2,505,888 B for M55 firmware
-   # instead of the ~561 KB left by the stock cramfs-in-MRAM layout.
+   # Root filesystem on SD by default. MRAM then holds only TF-A, the DTB and the
+   # XIP kernel, freeing 2,505,888 B for M55 firmware instead of the ~561 KB left
+   # by the cramfs-in-MRAM layout.
    #
    # apss-sd-boot is a stock BSP feature (linux-alif.inc) that pulls in sd_boot.cfg:
    # the SDHCI/MMC drivers plus CONFIG_CMDLINE_FORCE=y with
    #   root=/dev/mmcblk0p1 rootfstype=ext4 rootwait rw
-   # No distro enables it, so it is opt-in here. See docs/config-b2-sd-root.md.
-   if [ "${ROOTFS_ON_SD:-0}" = "1" ] ; then
+   # CONFIG_CMDLINE_FORCE means the kernel IGNORES the device tree bootargs, so the
+   # stock DTB needs no patching -- but it also means this kernel REQUIRES an SD
+   # card holding an ext4 root on the first partition. It will not fall back to a
+   # cramfs in MRAM even if one is present.
+   #
+   # Set ROOTFS_ON_SD=0 for the stock cramfs-in-MRAM layout with no SD card.
+   # See docs/config-b2-sd-root.md.
+   if [ "${ROOTFS_ON_SD:-1}" = "1" ] ; then
       echo "DISTRO_FEATURES_append = \" apss-sd-boot\"" >> conf/auto.conf
    fi
    if [ "x$SOURCE_MIRROR_URL" = "x" ] ; then

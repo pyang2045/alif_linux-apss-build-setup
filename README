@@ -1,28 +1,45 @@
 WHAT THIS FORK ADDS
 ===================================================================
-Two things on top of the upstream Alif build setup, both selected by
-environment variables read by scripts/setup.sh:
+Two changes on top of the upstream Alif build setup. BOTH ARE ON BY
+DEFAULT; each is controlled by an environment variable read by
+scripts/setup.sh.
 
-  SMP=1           (the default here)  Boots Linux on BOTH Cortex-A32
-                  cores. Upstream hangs before userspace because TF-A
-                  never initialises CNTVOFF on the Hyp entry path.
-                  The fix lives in meta-e7-smp/ - see its README.md.
+  SMP=1           (default)  Boots Linux on BOTH Cortex-A32 cores.
+                  Upstream hangs before userspace because TF-A never
+                  initialises CNTVOFF on the Hyp entry path. The fix
+                  lives in meta-e7-smp/ - see its README.md.
+                  Set SMP=0 for the stock single-core build.
 
-  ROOTFS_ON_SD=1  Puts the root filesystem on an SD card instead of a
-                  cramfs in MRAM. MRAM then holds only TF-A, the DTB
-                  and the XIP kernel, leaving 2,505,888 bytes free for
-                  M55 firmware instead of ~561,000 - a 4.5x increase.
-                  Full guide: docs/config-b2-sd-root.md
+  ROOTFS_ON_SD=1  (default)  Puts the root filesystem on an SD card
+                  instead of a cramfs in MRAM. MRAM then holds only
+                  TF-A, the DTB and the XIP kernel, leaving 2,505,888
+                  bytes free for M55 firmware instead of ~561,000 -
+                  a 4.5x increase.
+                  Set ROOTFS_ON_SD=0 for the stock cramfs-in-MRAM
+                  layout. Full guide: docs/config-b2-sd-root.md
 
 Typical invocation:
 
   sh scripts/fetch-layers.sh
-  ROOTFS_ON_SD=1 source scripts/setup.sh
+  source scripts/setup.sh
   bitbake alif-tiny-image
 
-With ROOTFS_ON_SD=1 you do NOT burn a cramfs image into MRAM. Steps
-below that mention alif-tiny-image-devkit-e7.cramfs-xip apply to the
-stock layout only; use the .ext4 image on an SD card instead.
+READ THIS IF YOU HAVE NO SD CARD
+--------------------------------
+The default build sets CONFIG_CMDLINE_FORCE=y with
+root=/dev/mmcblk0p1. The kernel therefore IGNORES the device tree
+bootargs and REQUIRES an SD card carrying an ext4 root on its first
+partition. It will not fall back to a cramfs in MRAM even if one is
+burned. Build with ROOTFS_ON_SD=0 if you want the stock layout.
+
+By default you do NOT burn a cramfs image into MRAM. Steps below that
+mention alif-tiny-image-devkit-e7.cramfs-xip apply to ROOTFS_ON_SD=0
+only; otherwise use the .ext4 image on an SD card.
+
+NOTE: scripts/setup.sh writes conf/auto.conf only when that file does
+not already exist. Changing SMP or ROOTFS_ON_SD against a build
+directory you have used before has NO EFFECT - delete conf/auto.conf
+or use a fresh build directory.
 
 The upstream build instructions follow, unchanged.
 ===================================================================

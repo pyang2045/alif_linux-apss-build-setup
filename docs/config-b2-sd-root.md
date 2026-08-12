@@ -38,15 +38,17 @@ A32_0; the DTB and kernel are data-only entries that TF-A jumps to.
 
 ## 1. Build
 
+This is the **default build** — no environment variables needed:
+
 ```sh
 git clone <this repo> && cd alif_linux-apss-build-setup
 ./scripts/fetch-layers.sh
-ROOTFS_ON_SD=1 source scripts/setup.sh
+source scripts/setup.sh
 bitbake alif-tiny-image
 ```
 
-`ROOTFS_ON_SD=1` adds the `apss-sd-boot` distro feature. That is a **stock BSP feature**
-(defined in `linux-alif.inc`) that no distro enables by default. It pulls in
+`ROOTFS_ON_SD` defaults to `1` and adds the `apss-sd-boot` distro feature. That is a **stock
+BSP feature** (defined in `linux-alif.inc`) that no distro enables. It pulls in
 `sd_boot.cfg`, which supplies the SDHCI/MMC drivers and:
 
 ```
@@ -56,6 +58,39 @@ CONFIG_CMDLINE_FORCE=y
 
 `CONFIG_CMDLINE_FORCE=y` makes the kernel ignore whatever `bootargs` the device tree
 carries, so the stock DTB is used unmodified — no device-tree patching is required.
+
+> **This kernel requires an SD card.** Because it ignores the device tree command line, it
+> will look for `/dev/mmcblk0p1` and nothing else — it does not fall back to a cramfs in
+> MRAM even if one is burned. Build with `ROOTFS_ON_SD=0 source scripts/setup.sh` if you
+> want the stock cramfs-in-MRAM layout instead.
+
+### There is no automatic fallback
+
+`root=` names exactly one device, and the command line carries `rootwait`, whose documented
+behaviour is to wait indefinitely for that device to appear. With no card inserted the
+kernel does not panic and does not try anything else — it boots normally through TF-A and
+SMP bring-up and then **stops silently** just before mounting root:
+
+```
+SMP: Total of 2 processors activated (400.00 BogoMIPS).
+...
+                          <- no VFS: line, no panic, no prompt
+```
+
+If you see that, check the card before suspecting the kernel.
+
+Automatic fallback would require an initramfs that probes for `mmcblk0p1`, falls back to the
+MTD cramfs, and then `switch_root`s. That is a real option, but it defeats the purpose here:
+an XIP kernel links its initramfs into the kernel image, so it lands in MRAM and spends a
+few hundred KB of the 2,505,888 B this configuration exists to free.
+
+If you want to switch roots *without* rebuilding, drop `CONFIG_CMDLINE_FORCE` and put the
+bootargs in the device tree instead — then swapping a 33 KB DTB changes the root device,
+at the cost of the stock-DTB property described above.
+
+Note that `setup.sh` writes `conf/auto.conf` only when that file does not already exist.
+Changing `ROOTFS_ON_SD` or `SMP` against a build directory you have used before has **no
+effect** — delete `conf/auto.conf` or use a fresh build directory.
 
 `SMP=1` is the default in this repo and brings up both A32 cores. See
 [`meta-e7-smp/README.md`](../meta-e7-smp/README.md) for the TF-A fix that makes SMP work.
@@ -67,21 +102,84 @@ Artifacts land in `tmp-glibc/deploy/images/devkit-e7/`:
 | `bl32.bin` | TF-A `sp_min` |
 | `devkit-e7.dtb` | device tree |
 | `xipImage` | the kernel, executed in place from MRAM |
-| `alif-tiny-image-devkit-e7.ext4` | root filesystem for the SD card |
+| `alif-tiny-image-devkit-e7.ext4` | root filesystem image (64 MiB) — write to the SD card |
+| `alif-tiny-image-devkit-e7.tar.bz2` | same filesystem as a tarball — use it to fill a larger partition |
 
 ## 2. Prepare the SD card
 
-One ext4 partition, written with the image built above. **Check the device node first** —
-writing to the wrong disk destroys it.
+The kernel is built with `root=/dev/mmcblk0p1`, so it needs **an ext4 filesystem on the
+first partition**. Nothing else about the card matters — no boot partition, no bootloader,
+no special partition type.
+
+> **Identify the device node before every command below.** `dd` to the wrong disk destroys
+> it with no confirmation and no undo. Re-run `diskutil list` / `lsblk` after inserting the
+> card and confirm the size matches the card you just inserted.
+
+### Route A — write the image (macOS or Linux)
+
+Simplest, and the route verified on hardware here. The `.ext4` artifact is a complete
+filesystem; you write it onto the partition, not onto the whole disk.
+
+**macOS.** It cannot create ext4 filesystems, but it does not need to — the image already
+contains one. Create a partition slot, then overwrite it:
 
 ```sh
-diskutil list                                    # identify the card, e.g. /dev/disk4
+diskutil list                                    # find the card, e.g. /dev/disk4
+diskutil partitionDisk /dev/disk4 MBR MS-DOS SDROOT 100%
 diskutil unmountDisk /dev/disk4
 sudo dd if=alif-tiny-image-devkit-e7.ext4 of=/dev/rdisk4s1 bs=4m status=progress
 sync
+diskutil eject /dev/disk4
 ```
 
-The kernel expects the root on the **first partition** (`/dev/mmcblk0p1`).
+`partitionDisk` writes an MBR with one partition; the `dd` then replaces its contents with
+ext4. The partition type byte stays `0x0b` (FAT32) and is a harmless lie — Linux opens
+`mmcblk0p1` directly and `rootfstype=ext4` tells it what to expect. Use `/dev/rdisk4s1`
+(raw) rather than `/dev/disk4s1`; it is far faster on macOS.
+
+**Linux.** Same idea, with the partition type set correctly:
+
+```sh
+lsblk                                            # find the card, e.g. /dev/sdb
+sudo parted -s /dev/sdb mklabel msdos
+sudo parted -s /dev/sdb mkpart primary ext4 1MiB 100%
+sudo dd if=alif-tiny-image-devkit-e7.ext4 of=/dev/sdb1 bs=4M status=progress conv=fsync
+```
+
+The filesystem is **64 MiB regardless of card size**. To use the rest of a larger card:
+
+```sh
+sudo e2fsck -f /dev/sdb1 && sudo resize2fs /dev/sdb1
+```
+
+### Route B — format and extract (Linux only)
+
+Sizes the filesystem to the partition from the start, so no resize step:
+
+```sh
+sudo parted -s /dev/sdb mklabel msdos
+sudo parted -s /dev/sdb mkpart primary ext4 1MiB 100%
+sudo mkfs.ext4 -L sdroot /dev/sdb1
+sudo mount /dev/sdb1 /mnt
+sudo tar -xpjf alif-tiny-image-devkit-e7.tar.bz2 -C /mnt
+sudo umount /mnt
+```
+
+`-p` matters: it preserves ownership and permissions. Without it `/bin/busybox` loses its
+setuid bit and the system will not boot to a usable shell.
+
+### Check it before you insert it
+
+```sh
+sudo e2fsck -fn /dev/sdb1            # or /dev/disk4s1 on macOS with e2fsprogs installed
+sudo mount -o ro /dev/sdb1 /mnt && ls /mnt && sudo umount /mnt
+```
+
+You should see a normal root tree — `bin dev etc lib proc sbin sys tmp usr var`. If `ls`
+shows nothing or the mount fails, the write landed on the wrong node or on the whole disk
+instead of the partition.
+
+Insert the card into the DevKit's SD slot before powering the board.
 
 ## 3. Provision MRAM
 
