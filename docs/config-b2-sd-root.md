@@ -167,14 +167,40 @@ VFS: Mounted root (ext4 filesystem) on device 179:1.
 devkit-e7 login:
 ```
 
-Check `nproc` reports `2`, and that `/proc/interrupts` shows `arch_timer` counts advancing
-on both CPUs.
+From a shell on the board:
+
+```
+# nproc
+2
+# grep -c processor /proc/cpuinfo
+2
+# grep arch_timer /proc/interrupts
+ 20:      24350      24350     GIC-0  27 Level     arch_timer
+```
+
+Equal, advancing `arch_timer` counts on both columns are the real SMP proof — the CNTVOFF
+bug this repo fixes shows up precisely as the two cores disagreeing about time.
+
+Confirm the SD root is genuinely writable, not just mounted:
+
+```
+# mount | grep ' / '
+/dev/root on / type ext4 (rw,relatime)
+# touch /tmp/wtest && ls -l /tmp/wtest
+-rw-r--r--    1 root root 0 Jan 1 00:04 /tmp/wtest
+```
+
+Note that this image ships **no `/root` directory** — `poky-tiny` omits it. `touch
+/root/anything` fails with `No such file or directory` until you `mkdir -p /root`. That is
+an empty-image quirk, not a read-only filesystem.
 
 ## Status of this configuration
 
 | claim | evidence |
 |---|---|
 | Boots to `login:` with SMP and ext4 root on SD | verified on hardware, repeatedly |
+| Both A32 cores active | `nproc` = 2; `arch_timer` 24350 on CPU0 **and** CPU1 |
+| SD root is writable | `/dev/root on / type ext4 (rw,relatime)`; `touch` succeeds |
 | 2,505,888 B free for M55 | `app-gen-toc` reported `Available MRAM: 2505888` |
 | HyperRAM configured and sized at 32 MiB | verified; full 32 MiB zero-pattern sweep clean |
 | `ROOTFS_ON_SD=1` / `apss-sd-boot` build path | **not yet built end-to-end** — the verified boots used a hand-edited DTB carrying byte-identical bootargs |
