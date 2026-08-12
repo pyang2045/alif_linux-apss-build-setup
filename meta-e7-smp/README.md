@@ -69,3 +69,24 @@ Hyp only to install a stub and immediately drops to SVC. Any AArch32 platform co
 
 The patch is marked `Upstream-Status: Pending`. It is validated on the E7 DevKit only and
 would need broader testing before submission to the TF-A list.
+
+## Building on macOS
+
+The macOS host filesystem is case-insensitive, which Yocto cannot use for its build
+directory. Keep the checkout bind-mounted at `/src` but place the build directory inside the
+container's own case-sensitive overlay (e.g. `/build`) rather than under the mount. This is
+an environment constraint, not a source change — nothing in this layer depends on it.
+
+## Verified from a clean clone
+
+`git clone -b smp-support`, `fetch-layers.sh`, `setup.sh`, `bitbake alif-tiny-image`, then
+provisioning MRAM from the resulting artifacts:
+
+| Check | Result |
+|---|---|
+| Layer wired in | `bblayers.conf` has `/src/meta-e7-smp`; `auto.conf` has `SMP="1"` |
+| Patch applied | `do_patch` log confirms; `write64_cntvoff(0)` present in the HCE branch |
+| `bl32.bin` reproducible | 30,136 B; **only 3 differing byte ranges vs the reference, all inside the build-timestamp string** |
+| Kernel config | `CONFIG_SMP=y`, `CONFIG_NR_CPUS=2` |
+| Boot | `SMP: Total of 2 processors activated`, reaches `devkit-e7 login:` |
+| Runtime | `nproc` = 2; `arch_timer` 10643 on CPU0 **and** 10643 on CPU1 |
