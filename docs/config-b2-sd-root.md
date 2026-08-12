@@ -203,12 +203,24 @@ an empty-image quirk, not a read-only filesystem.
 | SD root is writable | `/dev/root on / type ext4 (rw,relatime)`; `touch` succeeds |
 | 2,505,888 B free for M55 | `app-gen-toc` reported `Available MRAM: 2505888` |
 | HyperRAM configured and sized at 32 MiB | verified; full 32 MiB zero-pattern sweep clean |
-| `ROOTFS_ON_SD=1` / `apss-sd-boot` build path | **not yet built end-to-end** — the verified boots used a hand-edited DTB carrying byte-identical bootargs |
+| `ROOTFS_ON_SD=1` / `apss-sd-boot` build path | verified end to end — fresh clone, fresh build directory, 1502/1502 tasks, burned and booted |
 
-The last row is the honest caveat. `sd_boot.cfg` supplies exactly the command line that was
-verified on hardware, and `CONFIG_CMDLINE_FORCE=y` overrides the device tree by definition,
-so this is the correct mechanism rather than a re-derivation — but the full build has not
-been run through this switch yet.
+That last row was an open caveat until it was built and booted from a clean checkout of this
+branch. The check that matters is the pair below: the **deployed device tree still asks for
+cramfs**, while the running kernel takes the SD command line from `CONFIG_CMDLINE_FORCE`.
+
+```
+# deployed devkit-e7.dtb, decompiled — unmodified, md5 0b68b640…
+bootargs = "console=ttyS0,115200n8 root=mtd:physmap-flash.0 rootfstype=cramfs ro loglevel=9";
+
+# and on the console at boot:
+Kernel command line: console=ttyS0,115200n8 root=/dev/mmcblk0p1 rootfstype=ext4 rootwait rw loglevel=9
+EXT4-fs (mmcblk0p1): mounted filesystem with ordered data mode.
+VFS: Mounted root (ext4 filesystem) on device 179:1.
+devkit-e7 login:
+```
+
+The DTB is byte-identical to the stock one the BSP produces. Nothing edits it.
 
 ## Why not a compressed kernel?
 
