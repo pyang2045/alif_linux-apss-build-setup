@@ -4,6 +4,9 @@ Makes the Alif Ensemble E7 DevKit boot Linux on **both** Cortex-A32 cores.
 
 Added to `bblayers.conf` automatically by `scripts/setup.sh`. Nothing to install.
 
+For the MRAM-saving layout that pairs with this (root filesystem on SD, 2,505,888 B freed
+for M55 firmware), see [`docs/config-b2-sd-root.md`](../docs/config-b2-sd-root.md).
+
 ## The bug this fixes
 
 With `SMP = "1"`, the stock BSP brings both cores up and then dies before userspace:
